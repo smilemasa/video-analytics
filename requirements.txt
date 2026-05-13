@@ -1,0 +1,12 @@
+ultralytics
+transformers>=5.0.0
+torch
+torchvision
+opencv-python
+pillow
+einops
+accelerate
+deep-translator
+python-dotenv
+# Qwen3-VL dependencies
+qwen-vl-utils

@@ -1,0 +1,10 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+ultralytics
+transformers>=5.0.0
+torch
+torchvision
+opencv-python
+pillow
+einops
+deep-translator
+python-dotenv
