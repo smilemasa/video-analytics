@@ -1,9 +1,9 @@
 """
 backend/routers/live.py
 ------------------------
-WebSocket /ws/live
+WebSocket /ws/live          … ブラウザカメラ (既存)
 GET  /api/live/camera/status
-POST /api/live/camera/start
+POST /api/live/camera/start  … USB / RTSP / ONVIF
 POST /api/live/camera/stop
 GET  /api/live/camera/stream  (SSE)
 """
@@ -21,7 +21,6 @@ import cv2
 import numpy as np
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
-from PIL import Image
 
 from backend.schemas.models import (
     CameraStartRequest,
@@ -34,31 +33,104 @@ from backend.services.analyzer import AnalyzerService, get_analyzer_service
 router = APIRouter()
 
 
+# ---- ONVIF ヘルパー ----
+
+def _resolve_onvif_rtsp(
+    host: str,
+    port: int,
+    user: str,
+    password: str,
+    profile_index: int,
+) -> str:
+    """ONVIF カメラに接続し RTSP ストリーム URI を返す。"""
+    try:
+        from onvif import ONVIFCamera  # type: ignore
+    except ImportError as exc:
+        raise RuntimeError(
+            "ONVIF サポートには onvif-zeep パッケージが必要です: "
+            "pip install onvif-zeep"
+        ) from exc
+
+    cam = ONVIFCamera(host, port, user, password)
+    media = cam.create_media_service()
+    profiles = media.GetProfiles()
+    if not profiles:
+        raise RuntimeError("ONVIF プロファイルが見つかりません")
+    idx = min(profile_index, len(profiles) - 1)
+    token = profiles[idx].token
+    stream_setup = {
+        "StreamSetup": {
+            "Stream": "RTP-Unicast",
+            "Transport": {"Protocol": "RTSP"},
+        },
+        "ProfileToken": token,
+    }
+    stream_uri = media.GetStreamUri(stream_setup)
+    rtsp_url: str = stream_uri.Uri
+    # 認証情報を URL に埋め込む (rtsp://user:pass@host/...)
+    if user and password and "@" not in rtsp_url:
+        rtsp_url = rtsp_url.replace("rtsp://", f"rtsp://{user}:{password}@", 1)
+    return rtsp_url
+
+
 # ---- サーバーカメラ状態管理 ----
 
 class CameraManager:
     def __init__(self):
         self.active = False
-        self.camera_index = 0
-        self.fps = 30
-        self._cap: cv2.VideoCapture | None = None
+        self.fps = 15
+        self.source_type: str = "usb"
+        self.source_label: str = ""
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
-        self._latest_frame: bytes | None = None  # JPEG bytes
+        self._latest_frame: bytes | None = None
         self._latest_detections: list = []
         self._latest_vlm: str = ""
         self._stop_event = threading.Event()
+        self._error: str | None = None
 
-    def start(self, camera_index: int, svc: AnalyzerService) -> None:
+    # --- public API ---
+
+    def start(self, req: CameraStartRequest, svc: AnalyzerService) -> None:
         with self._lock:
             if self.active:
                 return
             self._stop_event.clear()
-            self.camera_index = camera_index
+            self._error = None
             self.active = True
+            self.source_type = req.source_type
+
+        try:
+            capture_src: int | str
+            if req.source_type == "usb":
+                capture_src = req.camera_index
+                self.source_label = f"USB カメラ #{req.camera_index}"
+            elif req.source_type == "rtsp":
+                if not req.rtsp_url:
+                    raise ValueError("RTSP URL が指定されていません")
+                capture_src = req.rtsp_url
+                self.source_label = req.rtsp_url
+            elif req.source_type == "onvif":
+                if not req.onvif_host:
+                    raise ValueError("ONVIF ホストが指定されていません")
+                capture_src = _resolve_onvif_rtsp(
+                    req.onvif_host,
+                    req.onvif_port,
+                    req.onvif_user or "",
+                    req.onvif_password or "",
+                    req.onvif_profile,
+                )
+                self.source_label = f"ONVIF {req.onvif_host} (→ {capture_src})"
+            else:
+                raise ValueError(f"不明な source_type: {req.source_type}")
+        except Exception as exc:
+            with self._lock:
+                self.active = False
+                self._error = str(exc)
+            raise
 
         self._thread = threading.Thread(
-            target=self._capture_loop, args=(camera_index, svc), daemon=True
+            target=self._capture_loop, args=(capture_src, svc), daemon=True
         )
         self._thread.start()
 
@@ -73,10 +145,18 @@ class CameraManager:
     def get_latest(self) -> tuple[bytes | None, list, str]:
         return self._latest_frame, self._latest_detections, self._latest_vlm
 
-    def _capture_loop(self, camera_index: int, svc: AnalyzerService) -> None:
-        cap = cv2.VideoCapture(camera_index)
+    @property
+    def error(self) -> str | None:
+        return self._error
+
+    # --- 内部キャプチャループ ---
+
+    def _capture_loop(self, src: int | str, svc: AnalyzerService) -> None:
+        cap = cv2.VideoCapture(src)
         if not cap.isOpened():
-            self.active = False
+            with self._lock:
+                self.active = False
+                self._error = f"カメラを開けませんでした: {src}"
             return
 
         interval = 1.0 / self.fps
@@ -105,14 +185,14 @@ class CameraManager:
             self._latest_frame = buf.tobytes()
             self._latest_detections = detections
 
-            # VLM 結果は非同期ワーカーが更新したものを利用
             svc.analyzer.push_frame(frame)
             self._latest_vlm = svc.analyzer.get_latest_result()
 
             time.sleep(interval)
 
         cap.release()
-        self.active = False
+        with self._lock:
+            self.active = False
 
 
 _camera_manager = CameraManager()
@@ -124,7 +204,12 @@ _camera_manager = CameraManager()
 async def camera_status():
     m = _camera_manager
     if m.active:
-        return CameraStatusResponse(active=True, camera_index=m.camera_index, fps=m.fps)
+        return CameraStatusResponse(
+            active=True,
+            source_type=m.source_type,
+            source_label=m.source_label,
+            fps=m.fps,
+        )
     return CameraStatusResponse(active=False)
 
 
@@ -133,8 +218,12 @@ async def camera_start(
     req: CameraStartRequest,
     svc: AnalyzerService = Depends(get_analyzer_service),
 ):
-    _camera_manager.start(req.camera_index, svc)
-    return CameraStartResponse(active=True, camera_index=req.camera_index)
+    _camera_manager.start(req, svc)
+    return CameraStartResponse(
+        active=True,
+        source_type=_camera_manager.source_type,
+        source_label=_camera_manager.source_label,
+    )
 
 
 @router.post("/api/live/camera/stop", response_model=CameraStopResponse)
@@ -167,7 +256,7 @@ async def camera_stream(svc: AnalyzerService = Depends(get_analyzer_service)):
     )
 
 
-# ---- WebSocket /ws/live ----
+# ---- WebSocket /ws/live (ブラウザカメラ) ----
 
 @router.websocket("/ws/live")
 async def websocket_live(

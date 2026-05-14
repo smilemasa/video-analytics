@@ -8,7 +8,7 @@ FastAPI エントリポイント。
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.routers import system, settings, static, live
+from backend.routers import system, settings, static, live, security
 
 app = FastAPI(title="Video Analytics API", version="1.0.0")
 
@@ -26,3 +26,4 @@ app.include_router(system.router)
 app.include_router(settings.router)
 app.include_router(static.router)
 app.include_router(live.router)
+app.include_router(security.router)

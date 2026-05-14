@@ -1,0 +1,71 @@
+detection:
+  fps: 10
+  confidence_min: 0.5
+  # pixels_per_meter: キャリブレーション値が未確定の場合は null にする。
+  # null の場合、距離はピクセル距離のまま扱われる。
+  pixels_per_meter: null
+  target_classes:
+    person: [0]
+    vehicle: [2, 3, 5, 7]
+
+trigger:
+  distance_threshold_m: 3.0    # pixels_per_meter が設定済みのときのメートル閾値
+  distance_threshold_px: 200   # pixels_per_meter が null のときのピクセル閾値（未キャリブ時）
+  stay_duration_sec: 2.0
+
+owner_exclusion:
+  proximity_threshold_m: 1.5  # 未キャリブ時はピクセル距離
+  detection_window_sec: 10.0  # 車両到着後の検出ウィンドウ
+  exclusion_duration_sec: 300.0  # 除外継続時間 (sec)
+
+scoring:
+  threshold: 70
+  # 夜間帯: 22:00〜05:59 (end は非含)
+  night_start_hour: 22
+  night_end_hour: 6
+  # 薄暮帯1: 18:00〜21:59
+  twilight1_start_hour: 18
+  twilight1_end_hour: 22
+  # 薄暮帯2: 05:00〜06:59
+  twilight2_start_hour: 5
+  twilight2_end_hour: 7
+  # 過去 N 時間以内の不審イベントで +10
+  recent_event_window_hours: 24
+
+behavior_scores:
+  forced_entry_attempt: 60
+  vandalism: 50
+  tampering: 45
+  peering: 30
+  approach_fast: 25
+  circling: 15
+  stay_near_vehicle: 10
+  unknown_behavior: 5
+
+labels:
+  - forced_entry_attempt
+  - vandalism
+  - tampering
+  - peering
+  - approach_fast
+  - circling
+  - stay_near_vehicle
+  - unknown_behavior
+
+vlm_prompt_template: |
+  以下の映像を確認し、映像中の人物の行動として最も当てはまるラベルを
+  下記の候補から1つ選んでください。
+  該当なしの場合は unknown_behavior を選択してください。
+
+  ラベル候補:
+  - forced_entry_attempt : 窓破壊・ドア強制開錠などの不正侵入試行
+  - vandalism            : 車体への損傷行為（キズ・蹴り等）
+  - tampering            : ドア・ハンドル・鍵穴への接触・操作試行
+  - peering              : 車内をのぞき込む行為
+  - approach_fast        : 車両への急接近・走り寄り
+  - circling             : 車両周囲を周回する行為
+  - stay_near_vehicle    : 車両近傍での長時間滞在・うろつき
+  - unknown_behavior     : 上記いずれにも該当しない
+
+  出力形式（JSON のみ。他の文字列を含めないこと）:
+  {"label": "<ラベル>", "reason": "<根拠を1文で>"}

@@ -10,3 +10,7 @@ deep-translator
 python-dotenv
 # Qwen3-VL dependencies
 qwen-vl-utils
+# WebSocket support for uvicorn
+websockets
+# ONVIF camera support
+onvif-zeep

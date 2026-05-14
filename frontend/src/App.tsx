@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
 import Header from "./components/Header";
 import StaticPage from "./pages/StaticPage";
 import LivePage from "./pages/LivePage";
+import SecurityPage from "./pages/SecurityPage";
 
 const qc = new QueryClient();
 
@@ -19,11 +20,15 @@ export default function App() {
             <NavLink to="/live" style={({ isActive }) => linkStyle(isActive)}>
               ライブ解析
             </NavLink>
+            <NavLink to="/security" style={({ isActive }) => linkStyle(isActive)}>
+              セキュリティ
+            </NavLink>
           </nav>
           <main>
             <Routes>
               <Route path="/" element={<StaticPage />} />
               <Route path="/live" element={<LivePage />} />
+              <Route path="/security" element={<SecurityPage />} />
             </Routes>
           </main>
         </div>

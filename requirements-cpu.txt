@@ -8,3 +8,7 @@ pillow
 einops
 deep-translator
 python-dotenv
+# WebSocket support for uvicorn
+websockets
+# ONVIF camera support
+onvif-zeep
