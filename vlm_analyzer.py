@@ -20,7 +20,7 @@ from models import MODEL_REGISTRY
 
 
 class VLMAnalyzer:
-    def __init__(self, model_id: str = "vikhyatk/moondream2", device: str | None = None):
+    def __init__(self, model_id: str = "Qwen/Qwen2-VL-2B-Instruct", device: str | None = None):
         """
         VLM（Vision-Language Model）による画像解析クラス。
         バックグラウンドスレッドで重い推論タスクを実行します。

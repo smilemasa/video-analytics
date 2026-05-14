@@ -9,15 +9,12 @@ VLMモデルのレジストリ。
     以上。vlm_analyzer.py や main.py への変更は不要。
 """
 
-from .moondream import MoondreamModel
-from .blip import BlipModel
-from .qwen_vl import QwenVLModel
+from .qwen_vl import QwenVL2BModel, QwenVL3BModel
 
 # model_id (str) -> VLMBase サブクラス のマッピング
 MODEL_REGISTRY: dict[str, type] = {
-    MoondreamModel.MODEL_ID: MoondreamModel,
-    BlipModel.MODEL_ID:      BlipModel,
-    QwenVLModel.MODEL_ID:    QwenVLModel,
+    QwenVL2BModel.MODEL_ID: QwenVL2BModel,
+    QwenVL3BModel.MODEL_ID: QwenVL3BModel,
 }
 
 __all__ = ["MODEL_REGISTRY"]

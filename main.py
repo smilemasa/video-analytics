@@ -33,7 +33,7 @@ def get_c922_camera_index():
 def main():
     # コンポーネントの初期化
     detector = YoloDetector(model_name="yolov8n.pt", target_classes=[0])
-    analyzer = VLMAnalyzer(model_id="vikhyatk/moondream2")
+    analyzer = VLMAnalyzer(model_id="Qwen/Qwen2-VL-2B-Instruct")
     
     # VLM非同期処理の開始
     analyzer.start()
@@ -55,7 +55,7 @@ def main():
 
     # Tkinter 初期化
     root = tk.Tk()
-    root.title("Video Analytics Dashboard (YOLO + Moondream2)")
+    root.title("Video Analytics Dashboard (YOLO + Qwen-VL)")
     
     # 左ペイン：カメラ映像
     video_frame = tk.Frame(root)
@@ -145,7 +145,7 @@ def main():
     lbl_vlm_model.pack(pady=(20, 5))
 
     vlm_model_var = tk.StringVar()
-    vlm_model_var.set("vikhyatk/moondream2")
+    vlm_model_var.set("Qwen/Qwen2-VL-2B-Instruct")
     
     SUPPORTED_MODELS = list(MODEL_REGISTRY.keys())
     

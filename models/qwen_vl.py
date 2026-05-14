@@ -14,8 +14,11 @@ from PIL import Image
 from .base import VLMBase
 
 
-class QwenVLModel(VLMBase):
+class QwenVL3BModel(VLMBase):
     MODEL_ID = "Qwen/Qwen2.5-VL-3B-Instruct"
+
+class QwenVL2BModel(QwenVL3BModel):
+    MODEL_ID = "Qwen/Qwen2-VL-2B-Instruct"
 
     def __init__(self, device=None):
         super().__init__(device)
