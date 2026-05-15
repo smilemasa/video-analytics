@@ -53,19 +53,18 @@ labels:
   - unknown_behavior
 
 vlm_prompt_template: |
-  以下の映像を確認し、映像中の人物の行動として最も当てはまるラベルを
-  下記の候補から1つ選んでください。
-  該当なしの場合は unknown_behavior を選択してください。
+  Please review the video and select the most appropriate label for the behavior of the person in the video from the candidates below.
+  If none apply, select unknown_behavior.
 
-  ラベル候補:
-  - forced_entry_attempt : 窓破壊・ドア強制開錠などの不正侵入試行
-  - vandalism            : 車体への損傷行為（キズ・蹴り等）
-  - tampering            : ドア・ハンドル・鍵穴への接触・操作試行
-  - peering              : 車内をのぞき込む行為
-  - approach_fast        : 車両への急接近・走り寄り
-  - circling             : 車両周囲を周回する行為
-  - stay_near_vehicle    : 車両近傍での長時間滞在・うろつき
-  - unknown_behavior     : 上記いずれにも該当しない
+  Label Candidates:
+  - forced_entry_attempt : Attempted unauthorized entry such as breaking windows or forcing doors open
+  - vandalism            : Damaging the vehicle (scratching, kicking, etc.)
+  - tampering            : Touching or attempting to operate doors, handles, or keyholes
+  - peering              : Peering into the vehicle
+  - approach_fast        : Approaching or running towards the vehicle rapidly
+  - circling             : Circling around the vehicle
+  - stay_near_vehicle    : Loitering or staying near the vehicle for a long time
+  - unknown_behavior     : None of the above apply
 
-  出力形式（JSON のみ。他の文字列を含めないこと）:
-  {"label": "<ラベル>", "reason": "<根拠を1文で>"}
+  Output format (JSON only. Do not include any other text):
+  {"label": "<label>", "reason": "<reason in one sentence>"}
