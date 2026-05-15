@@ -85,11 +85,15 @@ class CameraManager:
         self.fps = 15
         self.source_type: str = "usb"
         self.source_label: str = ""
-        self._thread: threading.Thread | None = None
+        self._read_thread: threading.Thread | None = None
+        self._process_thread: threading.Thread | None = None
         self._lock = threading.Lock()
+        
+        self._raw_frame: np.ndarray | None = None
         self._latest_frame: bytes | None = None
         self._latest_detections: list = []
         self._latest_vlm: str = ""
+        
         self._stop_event = threading.Event()
         self._error: str | None = None
 
@@ -133,18 +137,25 @@ class CameraManager:
                 self._error = str(exc)
             raise
 
-        self._thread = threading.Thread(
-            target=self._capture_loop, args=(capture_src, svc), daemon=True
+        self._read_thread = threading.Thread(
+            target=self._frame_read_loop, args=(capture_src,), daemon=True
         )
-        self._thread.start()
+        self._process_thread = threading.Thread(
+            target=self._process_loop, args=(svc,), daemon=True
+        )
+        self._read_thread.start()
+        self._process_thread.start()
 
     def stop(self) -> None:
         self._stop_event.set()
         with self._lock:
             self.active = False
-        if self._thread:
-            self._thread.join(timeout=3.0)
-            self._thread = None
+        if self._read_thread:
+            self._read_thread.join(timeout=3.0)
+            self._read_thread = None
+        if self._process_thread:
+            self._process_thread.join(timeout=3.0)
+            self._process_thread = None
 
     def get_latest(self) -> tuple[bytes | None, list, str]:
         return self._latest_frame, self._latest_detections, self._latest_vlm
@@ -153,57 +164,86 @@ class CameraManager:
     def error(self) -> str | None:
         return self._error
 
-    # --- 内部キャプチャループ ---
+    # --- 内部ループ ---
 
-    def _capture_loop(self, src: int | str, svc: AnalyzerService) -> None:
+    def _frame_read_loop(self, src: int | str) -> None:
+        import os
+        # RTSPの場合の遅延を減らすための環境変数設定
+        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay"
+        
         cap = cv2.VideoCapture(src)
         if not cap.isOpened():
             with self._lock:
                 self.active = False
                 self._error = f"カメラを開けませんでした: {src}"
+            self._stop_event.set()
             return
 
-        interval = 1.0 / self.fps
-        
-        # SecurityService にもフレームを流すため取得
-        from backend.services.security_service import get_security_service
-        sec_svc = get_security_service()
+        # USBカメラ向けにバッファサイズを最小化
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
         while not self._stop_event.is_set():
             ret, frame = cap.read()
             if not ret:
+                # 接続が切れた場合は少し待機（即終了させないためのハンドリングも可能ですが、ここでは終了します）
                 break
-
-            annotated, results = svc.detector.detect(frame)
-
-            detections = []
-            for box in results[0].boxes:
-                cls_id = int(box.cls[0])
-                conf = float(box.conf[0])
-                x1, y1, x2, y2 = box.xyxy[0].tolist()
-                label = svc.detector.model.names.get(cls_id, str(cls_id))
-                detections.append({
-                    "class_id": cls_id,
-                    "label": label,
-                    "confidence": round(conf, 4),
-                    "bbox": [round(x1, 1), round(y1, 1), round(x2, 1), round(y2, 1)],
-                })
-
-            _, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 70])
-            self._latest_frame = buf.tobytes()
-            self._latest_detections = detections
-
-            svc.analyzer.push_frame(frame)
-            self._latest_vlm = svc.analyzer.get_latest_result()
             
-            # Security Dashboard 向けに Security Pipeline にもフレームを投入
-            sec_svc.process_frame(frame)
-
-            time.sleep(interval)
+            # 常に最新のフレームだけを保持（古いフレームは上書きされ、遅延が蓄積しない）
+            self._raw_frame = frame
 
         cap.release()
         with self._lock:
             self.active = False
+        self._stop_event.set()
+
+    def _process_loop(self, svc: AnalyzerService) -> None:
+        interval = 1.0 / self.fps
+        
+        from backend.services.security_service import get_security_service
+        sec_svc = get_security_service()
+
+        while not self._stop_event.is_set():
+            start_time = time.time()
+            frame = self._raw_frame
+
+            if frame is not None:
+                # フレームのコピーを取得して処理
+                process_frame = frame.copy()
+                
+                # YOLOによる物体検出 (これが重いと時間がかかるが、読み込みスレッドは独立しているので遅延は蓄積しない)
+                annotated, results = svc.detector.detect(process_frame)
+
+                detections = []
+                for box in results[0].boxes:
+                    cls_id = int(box.cls[0])
+                    conf = float(box.conf[0])
+                    x1, y1, x2, y2 = box.xyxy[0].tolist()
+                    label = svc.detector.model.names.get(cls_id, str(cls_id))
+                    detections.append({
+                        "class_id": cls_id,
+                        "label": label,
+                        "confidence": round(conf, 4),
+                        "bbox": [round(x1, 1), round(y1, 1), round(x2, 1), round(y2, 1)],
+                    })
+
+                _, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                self._latest_frame = buf.tobytes()
+                self._latest_detections = detections
+
+                svc.analyzer.push_frame(process_frame)
+                self._latest_vlm = svc.analyzer.get_latest_result()
+                
+                # Security Dashboard 向けに Security Pipeline にもフレームを投入
+                sec_svc.process_frame(process_frame)
+
+            # FPS制御
+            elapsed = time.time() - start_time
+            sleep_time = interval - elapsed
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+            else:
+                # 処理が追いついていない場合でも、最小限のsleepを入れてCPU使用率100%を避ける
+                time.sleep(0.01)
 
 
 _camera_manager = CameraManager()
