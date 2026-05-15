@@ -19,14 +19,18 @@ from typing import AsyncGenerator
 
 import cv2
 import numpy as np
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import StreamingResponse
 
+import sys
+import glob
 from backend.schemas.models import (
     CameraStartRequest,
     CameraStartResponse,
     CameraStatusResponse,
     CameraStopResponse,
+    CameraListResponse,
+    CameraInfo,
 )
 from backend.services.analyzer import AnalyzerService, get_analyzer_service
 
@@ -160,6 +164,10 @@ class CameraManager:
             return
 
         interval = 1.0 / self.fps
+        
+        # SecurityService にもフレームを流すため取得
+        from backend.services.security_service import get_security_service
+        sec_svc = get_security_service()
 
         while not self._stop_event.is_set():
             ret, frame = cap.read()
@@ -187,6 +195,9 @@ class CameraManager:
 
             svc.analyzer.push_frame(frame)
             self._latest_vlm = svc.analyzer.get_latest_result()
+            
+            # Security Dashboard 向けに Security Pipeline にもフレームを投入
+            sec_svc.process_frame(frame)
 
             time.sleep(interval)
 
@@ -199,6 +210,30 @@ _camera_manager = CameraManager()
 
 
 # ---- Camera endpoints ----
+
+@router.get("/api/live/camera/list", response_model=CameraListResponse)
+async def camera_list():
+    cameras = []
+    if sys.platform.startswith("linux"):
+        devices = glob.glob("/dev/video*")
+        for dev in sorted(devices):
+            try:
+                idx = int(dev.replace("/dev/video", ""))
+                # We do not try to open them via cv2 here because it can cause crashes or warnings.
+                # Just listing `/dev/video*` is usually enough on Linux to show available devices.
+                cameras.append(CameraInfo(index=idx, label=f"USB Camera {idx} ({dev})"))
+            except ValueError:
+                pass
+    else:
+        for i in range(4):
+            cameras.append(CameraInfo(index=i, label=f"Camera {i}"))
+    
+    # Also add "Default (0)" just in case
+    if not cameras:
+        cameras.append(CameraInfo(index=0, label="Default Camera 0"))
+
+    return CameraListResponse(cameras=cameras)
+
 
 @router.get("/api/live/camera/status", response_model=CameraStatusResponse)
 async def camera_status():
@@ -219,6 +254,11 @@ async def camera_start(
     svc: AnalyzerService = Depends(get_analyzer_service),
 ):
     _camera_manager.start(req, svc)
+    # Wait briefly to catch immediate open errors
+    await asyncio.sleep(0.5)
+    if _camera_manager.error:
+        raise HTTPException(status_code=400, detail=_camera_manager.error)
+        
     return CameraStartResponse(
         active=True,
         source_type=_camera_manager.source_type,

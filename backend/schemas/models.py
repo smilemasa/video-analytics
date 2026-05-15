@@ -120,3 +120,12 @@ class CameraStartResponse(BaseModel):
 
 class CameraStopResponse(BaseModel):
     active: bool
+
+
+class CameraInfo(BaseModel):
+    index: int
+    label: str
+
+
+class CameraListResponse(BaseModel):
+    cameras: List[CameraInfo]

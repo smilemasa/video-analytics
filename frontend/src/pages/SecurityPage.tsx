@@ -6,6 +6,7 @@ import type {
   SecurityVideoJobResult,
   SecurityVideoEvent,
   CameraSourceType,
+  CameraInfo,
 } from "../api";
 import {
   getSecurityConfig,
@@ -13,6 +14,7 @@ import {
   startCamera,
   stopCamera,
   getCameraStatus,
+  getCameraList,
   analyzeSecurityImage,
   submitSecurityVideo,
   getSecurityVideoStatus,
@@ -84,6 +86,7 @@ function LiveView() {
   
   // Camera inputs
   const [cameraIndex, setCameraIndex] = useState(0);
+  const [cameraList, setCameraList] = useState<CameraInfo[]>([]);
   const [rtspUrl, setRtspUrl] = useState("rtsp://");
   const [onvifHost, setOnvifHost] = useState("");
   const [onvifPort, setOnvifPort] = useState(80);
@@ -108,6 +111,12 @@ function LiveView() {
       setCamActive(r.data.active);
       if (r.data.source_type) setSourceType(r.data.source_type as CameraSourceType);
     }).catch(() => {});
+    getCameraList().then((r) => {
+      setCameraList(r.data.cameras);
+      if (r.data.cameras.length > 0) {
+        setCameraIndex(r.data.cameras[0].index);
+      }
+    }).catch(() => {});
   }, []);
 
   const handleStartCamera = useCallback(async () => {
@@ -124,8 +133,9 @@ function LiveView() {
         });
       }
       setCamActive(true);
-    } catch (e) {
-      setCamError(String(e));
+    } catch (e: any) {
+      const msg = e.response?.data?.detail || e.message || String(e);
+      setCamError(msg);
     }
   }, [sourceType, cameraIndex, rtspUrl, onvifHost, onvifPort, onvifUser, onvifPassword, onvifProfile]);
 
@@ -162,7 +172,22 @@ function LiveView() {
             
             <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
               {sourceType === "usb" && (
-                <input type="number" min={0} value={cameraIndex} onChange={(e) => setCameraIndex(Number(e.target.value))} style={styles.input} disabled={camActive} placeholder="Index" />
+                cameraList.length > 0 ? (
+                  <select
+                    value={cameraIndex}
+                    onChange={(e) => setCameraIndex(Number(e.target.value))}
+                    style={styles.input}
+                    disabled={camActive}
+                  >
+                    {cameraList.map((cam) => (
+                      <option key={cam.index} value={cam.index}>
+                        {cam.label}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input type="number" min={0} value={cameraIndex} onChange={(e) => setCameraIndex(Number(e.target.value))} style={styles.input} disabled={camActive} placeholder="Index" />
+                )
               )}
               {sourceType === "rtsp" && (
                 <input type="text" value={rtspUrl} onChange={(e) => setRtspUrl(e.target.value)} style={{ ...styles.input, width: 300 }} disabled={camActive} />

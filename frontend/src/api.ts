@@ -122,6 +122,17 @@ export const getVideoStatus = (job_id: string) =>
 export const getVideoResult = (job_id: string) =>
   api.get<VideoJobResult>(`/api/static/video/${job_id}/result`);
 
+export interface CameraInfo {
+  index: number;
+  label: string;
+}
+
+export interface CameraListResponse {
+  cameras: { index: number; label: string }[];
+}
+
+export const getCameraList = () =>
+  api.get<CameraListResponse>("/api/live/camera/list");
 export const getCameraStatus = () =>
   api.get<CameraStatus>("/api/live/camera/status");
 export const startCamera = (params: CameraStartParams) =>
