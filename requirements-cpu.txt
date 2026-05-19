@@ -8,6 +8,9 @@ pillow
 einops
 deep-translator
 python-dotenv
+fastapi
+uvicorn[standard]
+python-multipart
 # WebSocket support for uvicorn
 websockets
 # ONVIF camera support

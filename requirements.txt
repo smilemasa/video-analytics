@@ -8,6 +8,9 @@ einops
 accelerate
 deep-translator
 python-dotenv
+fastapi
+uvicorn[standard]
+python-multipart
 # Qwen3-VL dependencies
 qwen-vl-utils
 # WebSocket support for uvicorn
